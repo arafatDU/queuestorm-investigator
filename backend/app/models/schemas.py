@@ -144,9 +144,9 @@ class AnalyzeTicketRequest(BaseModel):
 
     model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
 
-    ticket_id: str = Field(..., min_length=1, description="Unique ticket identifier.")
+    ticket_id: str = Field(..., description="Unique ticket identifier.")
     complaint: str = Field(
-        ..., min_length=1, description="Raw complaint text written by the user."
+        ..., description="Raw complaint text written by the user."
     )
 
     # --- Optional hints ----------------------------------------------------

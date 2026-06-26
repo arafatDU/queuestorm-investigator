@@ -81,6 +81,15 @@ async def analyze_ticket(payload: AnalyzeTicketRequest) -> AnalyzeTicketResponse
 
     started = time.perf_counter()
 
+    # --- 0. Semantic checks (per PS §4.1: 422 for invalid but well-formed input) --
+    # The Pydantic schema intentionally allows empty strings so the request can
+    # be parsed; semantically-empty inputs raise ValueError → global handler
+    # maps them to 422 instead of 400.
+    if not (payload.ticket_id or "").strip():
+        raise ValueError("ticket_id must be a non-empty string.")
+    if not (payload.complaint or "").strip():
+        raise ValueError("complaint must be a non-empty string.")
+
     # --- 1. Deterministic investigation ---------------------------------
     investigation = _investigator.investigate_request(payload)
 
