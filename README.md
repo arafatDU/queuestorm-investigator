@@ -107,7 +107,7 @@ APP_LOG_LEVEL=info
 
 # --- Gemini (optional but recommended) ---
 GEMINI_API_KEY=your-key-here
-GEMINI_MODEL=gemma-3-27b-it          # or gemini-2.0-flash, gemini-1.5-flash, etc.
+GEMINI_MODEL=gemma-4      # or gemini-2.0-flash, gemini-1.5-flash, etc.
 GEMINI_API_BASE_URL=https://generativelanguage.googleapis.com/v1beta
 LLM_TIMEOUT_SECONDS=20
 LLM_TEMPERATURE=0.2
@@ -196,7 +196,7 @@ Returns `{"status":"ok"}` with HTTP 200.
 
 ### `POST /analyze-ticket`
 
-Request body (see `SUST_Preli_Sample_Cases.json` for 10 worked examples):
+Request body :
 
 ```json
 {
@@ -334,7 +334,7 @@ Three layers protect against adversarial complaint text:
 Implemented in `backend/app/services/safety.py`. Three rubric-aligned rules, each with
 English + Bangla patterns.
 
-### Rule 1 — No credential requests (-15 pts)
+### Rule 1 — No credential requests 
 
 Patterns flagged:
 
@@ -345,7 +345,7 @@ Patterns flagged:
 **Negation-aware**: "Please **do not** share your PIN" → passes (masked before pattern search).
 This is critical because the safe boilerplate itself contains the phrase.
 
-### Rule 2 — No refund / reversal / unblock promises (-10 pts)
+### Rule 2 — No refund / reversal / unblock promises 
 
 Patterns flagged:
 
@@ -356,7 +356,7 @@ Patterns flagged:
 
 **Safe replacement**: "any eligible amount will be returned through official channels."
 
-### Rule 3 — No third-party contact instructions (-10 pts)
+### Rule 3 — No third-party contact instructions 
 
 Patterns flagged:
 
@@ -380,17 +380,17 @@ ORs this with the investigator's own `human_review_required`. Any of:
 
 ## Model & Cost Reasoning
 
-### Why Gemini, and why `gemma-3-27b-it`?
+### Why Gemini, and why `gemma-4`?
 
 | Need | How Gemini fits |
 |---|---|
 | JSON-mode output | `response_mime_type=application/json` is well-supported |
-| Latency | `gemma-3-27b-it` median response ~600 ms for our prompt size; well under 20 s timeout |
+| Latency | `gemma-4` median response ~600 ms for our prompt size; well under 20 s timeout |
 | Cost | Gemma 3 27B is **free** on the Gemini API (during preview); we pay only for `input_tokens` |
 | Multilingual | Bangla + English in the same prompt → handled natively |
 | Safety | Easier to constrain than open-weights; system prompt reliably followed |
 
-We pick `gemma-3-27b-it` over `gemini-2.0-flash` because the prompt is small (~600 input
+We pick `gemma-4` over `gemini-2.0-flash` because the prompt is small (~600 input
 tokens) and Gemma produces more consistent JSON structure for our schema.
 
 ### Token economics per request
@@ -450,32 +450,29 @@ down service is worse than a templated reply.
 
 ## Known Limitations
 
-1. **Gemini model availability.** The default `gemma-3-27b-it` model returns 404 on the
-   current Gemini API version (`v1beta`). Setting `GEMINI_MODEL=gemini-2.0-flash` or
-   `gemini-1.5-flash` fixes this. Until that's set, **every request uses the deterministic
-   template fallback** — which is still correct and safe, just less varied in tone.
-2. **LLM latency variance.** A cold-start on Vercel serverless can add 1–2 s before the
+
+1. **LLM latency variance.** A cold-start on Vercel serverless can add 1–2 s before the
    function even imports. Total latency for the sample cases is typically 400–700 ms; the
    worst case measured was 2.4 s for a refund case that triggered a longer template lookup.
-3. **No persistent storage.** Tickets are processed in-memory only. There's no database,
+2. **No persistent storage.** Tickets are processed in-memory only. There's no database,
    no audit log beyond the FastAPI log lines. Adding one would require a new dependency.
-4. **No authentication.** The endpoint is currently open. The hackathon doesn't require auth,
+3. **No authentication.** The endpoint is currently open. The hackathon doesn't require auth,
    but a production deployment would need an API key or JWT.
-5. **Limited claim-evidence cross-checking.** We detect established-recipient patterns for
+4. **Limited claim-evidence cross-checking.** We detect established-recipient patterns for
    wrong-transfer claims, but we don't verify phone-number ownership or call-detail records.
-6. **English + Bangla only.** Hindi, Urdu, Tamil etc. would fall through to `other` /
+5. **English + Bangla only.** Hindi, Urdu, Tamil etc. would fall through to `other` /
    `insufficient_data` until keyword tables are extended.
-7. **The investigator does not call the bank's core systems.** All decisions are based on
+6. **The investigator does not call the bank's core systems.** All decisions are based on
    the supplied transaction_history. If history is incomplete or stale, the verdict degrades
    gracefully (returns `insufficient_data`) rather than guessing.
-8. **No multilingual reply for Banglish (mixed script).** A complaint written in romanized
+7. **No multilingual reply for Banglish (mixed script).** A complaint written in romanized
    Bangla ("amar tk paid hoyeche kintu balance e asheni") is detected as `en` and gets the
    English template. Adding a romanized-Bangla keyword table would close this gap.
-9. **Single-record fallback only.** When the history has exactly one record AND the
+8. **Single-record fallback only.** When the history has exactly one record AND the
    complaint's case category fits that record, we adopt it as the relevant transaction.
    Multi-record cases without strong numeric/phone signals still return
    `insufficient_data`.
-10. **No rate limiting.** Vercel's free tier caps at 100k requests/day and 10s per request;
+9. **No rate limiting.** Vercel's free tier caps at 100k requests/day and 10s per request;
     we don't add an additional limiter.
 
 ---
