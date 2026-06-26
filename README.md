@@ -107,7 +107,7 @@ APP_LOG_LEVEL=info
 
 # --- Gemini (optional but recommended) ---
 GEMINI_API_KEY=your-key-here
-GEMINI_MODEL=gemma-4      # or gemini-2.0-flash, gemini-1.5-flash, etc.
+GEMINI_MODEL=gemma-3-27b-it      # or gemini-2.0-flash, gemini-1.5-flash, etc.
 GEMINI_API_BASE_URL=https://generativelanguage.googleapis.com/v1beta
 LLM_TIMEOUT_SECONDS=20
 LLM_TEMPERATURE=0.2
@@ -380,17 +380,17 @@ ORs this with the investigator's own `human_review_required`. Any of:
 
 ## Model & Cost Reasoning
 
-### Why Gemini, and why `gemma-4`?
+### Why Gemini, and why `gemma-3-27b-it`?
 
 | Need | How Gemini fits |
 |---|---|
 | JSON-mode output | `response_mime_type=application/json` is well-supported |
-| Latency | `gemma-4` median response ~600 ms for our prompt size; well under 20 s timeout |
+| Latency | `gemma-3-27b-it` median response ~600 ms for our prompt size; well under 20 s timeout |
 | Cost | Gemma 3 27B is **free** on the Gemini API (during preview); we pay only for `input_tokens` |
 | Multilingual | Bangla + English in the same prompt → handled natively |
 | Safety | Easier to constrain than open-weights; system prompt reliably followed |
 
-We pick `gemma-4` over `gemini-2.0-flash` because the prompt is small (~600 input
+We pick `gemma-3-27b-it` over `gemini-2.0-flash` because the prompt is small (~600 input
 tokens) and Gemma produces more consistent JSON structure for our schema.
 
 ### Token economics per request
