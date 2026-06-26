@@ -485,6 +485,16 @@ class TransactionInvestigator:
         signals = self._extract_signals(complaint, language_hint=language_hint)
         candidates = self._match_candidates(signals, transaction_history)
 
+        # If no numeric/phone signal matched but the complaint references a
+        # category that aligns with the only record in history, adopt it as
+        # the relevant transaction.
+        if not candidates:
+            fallback = self._fallback_single_history_match(
+                signals, transaction_history, user_type=user_type
+            )
+            if fallback is not None:
+                candidates = [fallback]
+
         records = [
             t if isinstance(t, TransactionRecord) else TransactionRecord.model_validate(t)
             for t in transaction_history
@@ -711,6 +721,53 @@ class TransactionInvestigator:
         candidates.sort(key=lambda m: (-m.score, m.transaction_id))
         return candidates
 
+    def _fallback_single_history_match(
+        self,
+        signals: ExtractedSignals,
+        history: list[dict[str, Any] | TransactionRecord],
+        *,
+        user_type: Optional[str] = None,
+    ) -> Optional[MatchedTransaction]:
+        """When the history contains exactly one record AND the complaint
+        references a category that fits that record (e.g. a single settlement
+        for a merchant asking about settlement), treat it as a relevant
+        candidate even when no numeric/phone signals match.
+
+        This avoids returning ``insufficient_data`` for clear, unambiguous
+        single-record complaints like "Settlement has not arrived for
+        yesterday's sales" when only one settlement transaction exists.
+        """
+
+        records = [
+            t if isinstance(t, TransactionRecord) else TransactionRecord.model_validate(t)
+            for t in history
+        ]
+        if len(records) != 1:
+            return None
+        rec = records[0]
+        is_merchant = (user_type or "").lower() == "merchant"
+
+        # Merchant settlement / cash-in agent — single history record wins.
+        if signals.has_merchant_settlement_signal and (
+            is_merchant or (rec.type and rec.type.value == "settlement")
+        ):
+            return MatchedTransaction(
+                transaction_id=rec.transaction_id,
+                match_reason="single_record_fallback",
+                score=10,
+                record=rec,
+            )
+        if signals.has_agent_cash_in_signal and (
+            rec.type is None or (rec.type and rec.type.value == "cash_in")
+        ):
+            return MatchedTransaction(
+                transaction_id=rec.transaction_id,
+                match_reason="single_record_fallback",
+                score=10,
+                record=rec,
+            )
+        return None
+
     # ---------------------------------------------------- verdict decision
 
     def _decide_verdict(
@@ -796,7 +853,7 @@ class TransactionInvestigator:
             return None
 
         timestamped.sort(key=lambda t: t[0])
-        for i in range(len(timestampped) - 1):
+        for i in range(len(timestamped) - 1):
             earlier_ts, earlier = timestamped[i]
             later_ts, later = timestamped[i + 1]
             try:
@@ -901,12 +958,20 @@ class TransactionInvestigator:
         amount = matched.record.amount if matched and matched.record.amount is not None else None
         is_high_value = amount is not None and amount >= self.high_value_threshold
 
-        # High — disputes, failed payments with deduction, high-value cases.
-        if case_type in {
-            CaseType.WRONG_TRANSFER,
-            CaseType.DUPLICATE_PAYMENT,
-            CaseType.AGENT_CASH_IN_ISSUE,
-        }:
+        # High — clear wrong_transfer with consistent evidence, duplicate, or
+        # agent cash-in issue (with pending status).
+        if case_type == CaseType.WRONG_TRANSFER and verdict == EvidenceVerdict.CONSISTENT:
+            return Severity.HIGH
+
+        if case_type == CaseType.DUPLICATE_PAYMENT:
+            return Severity.HIGH
+
+        if (
+            case_type == CaseType.AGENT_CASH_IN_ISSUE
+            and matched is not None
+            and matched.record.status is not None
+            and matched.record.status.value == "pending"
+        ):
             return Severity.HIGH
 
         if case_type == CaseType.PAYMENT_FAILED and (
@@ -1046,35 +1111,44 @@ class TransactionInvestigator:
             CaseType.WRONG_TRANSFER,
             CaseType.DUPLICATE_PAYMENT,
             CaseType.AGENT_CASH_IN_ISSUE,
-            CaseType.MERCHANT_SETTLEMENT_DELAY,
         }:
+            review = True
+
+        # Merchant settlement: escalate only when the settlement value is
+        # large enough that merchant_operations should treat it as a priority
+        # case rather than the standard reconciliation flow.
+        if (
+            case_type == CaseType.MERCHANT_SETTLEMENT_DELAY
+            and matched is not None
+            and matched.record.amount is not None
+            and matched.record.amount >= 2 * self.high_value_threshold
+        ):
             review = True
 
         if (
             case_type == CaseType.PAYMENT_FAILED
             and matched is not None
             and matched.record.amount is not None
-            and matched.record.amount >= 1000
+            and matched.record.amount >= self.high_value_threshold
         ):
             review = True
 
         if matched is not None and matched.record.status is not None:
             status = matched.record.status.value
             if status == "pending":
-                # Pending settlement is the normal expected state — only
-                # escalate when it's a non-merchant case or a high-value txn.
-                if not (
+                # Pending is the normal expected state for a settlement; only
+                # escalate when it's a non-merchant case OR a very high-value
+                # merchant transaction.
+                is_low_value_merchant_settlement = (
                     case_type == CaseType.MERCHANT_SETTLEMENT_DELAY
                     and matched.record.amount is not None
-                    and matched.record.amount < self.high_value_threshold
-                ):
+                    and matched.record.amount < 2 * self.high_value_threshold
+                )
+                if not is_low_value_merchant_settlement:
                     review = True
                 reasons.append("pending_transaction")
-            if status == "failed" and signals.has_payment_failed_signal and any(
-                kw in " ".join(PAYMENT_FAILED_KEYWORDS_EN).lower() for kw in ("deduct", "charged", "কেটে", "কাটা")
-            ):
-                review = True
-                reasons.append("failed_payment_with_deduction")
+            # Note: failed payments do NOT auto-escalate; payments_ops handles
+            # them through the standard reconciliation flow (SAMPLE-03).
 
         if severity in {Severity.CRITICAL, Severity.HIGH} and case_type in {
             CaseType.WRONG_TRANSFER,

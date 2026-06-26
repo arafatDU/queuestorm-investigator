@@ -34,6 +34,27 @@ class Settings(BaseSettings):
         default="https://generativelanguage.googleapis.com/v1beta",
         alias="GEMINI_API_BASE_URL",
     )
+    llm_timeout_seconds: float = Field(
+        default=20.0,
+        ge=1.0,
+        le=60.0,
+        alias="LLM_TIMEOUT_SECONDS",
+        description="Per-call timeout for the Gemini API. Must be <30s to fit the analyze-ticket SLA.",
+    )
+    llm_temperature: float = Field(
+        default=0.2,
+        ge=0.0,
+        le=2.0,
+        alias="LLM_TEMPERATURE",
+        description="Sampling temperature for Gemini. Low values keep replies grounded.",
+    )
+    llm_max_output_tokens: int = Field(
+        default=512,
+        ge=64,
+        le=4096,
+        alias="LLM_MAX_OUTPUT_TOKENS",
+        description="Maximum tokens for the Gemini reply (covers the 3 fields).",
+    )
 
     # ----- Safety -----
     safety_sanitizer_enabled: bool = Field(
