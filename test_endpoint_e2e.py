@@ -19,7 +19,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 CASES_PATH = ROOT / "SUST_Preli_Sample_Cases.json"
-BASE_URL = "http://127.0.0.1:8765"
+BASE_URL = "https://queuestorm-investigator-psi.vercel.app"
 
 
 # ---------------------------------------------------------------------------
@@ -392,13 +392,23 @@ def _check_adversarial(label: str, payload: dict, expected: dict) -> tuple[bool,
 
 
 def _malformed_tests() -> list[tuple[str, str, str, bytes, str]]:
-    """(label, method, path, raw_body, expected_code)."""
+    """(label, method, path, raw_body, expected_code).
+
+    Per PS §4.1:
+    - 400: malformed input (invalid JSON, missing required fields).
+    - 422: schema valid but semantically invalid (e.g. empty complaint).
+    """
 
     return [
         ("not-json", "POST", "/analyze-ticket", b"this is not json", "400"),
-        ("missing-ticket_id", "POST", "/analyze-ticket", json.dumps({"complaint": "hi"}).encode("utf-8"), "400"),
+        ("missing-ticket_id", "POST", "/analyze-ticket",
+         json.dumps({"complaint": "hi"}).encode("utf-8"), "400"),
         ("empty-complaint", "POST", "/analyze-ticket",
-         json.dumps({"ticket_id": "X", "complaint": ""}).encode("utf-8"), "400"),
+         json.dumps({"ticket_id": "X", "complaint": ""}).encode("utf-8"), "422"),
+        ("whitespace-only-complaint", "POST", "/analyze-ticket",
+         json.dumps({"ticket_id": "X", "complaint": "   \n\t  "}).encode("utf-8"), "422"),
+        ("empty-ticket-id", "POST", "/analyze-ticket",
+         json.dumps({"ticket_id": "", "complaint": "hi"}).encode("utf-8"), "422"),
         ("unknown-route", "POST", "/does-not-exist", b"{}", "404"),
         ("wrong-method", "PUT", "/analyze-ticket",
          json.dumps({"ticket_id": "X", "complaint": "hi"}).encode("utf-8"), "405"),
